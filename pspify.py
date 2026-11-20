@@ -5,6 +5,7 @@ Converted files appear in a "PSP_Ready" folder next to each source video.
 Copy them to the VIDEO folder on your PSP's memory card.
 Add --fill when running from a terminal to zoom the picture to fill the whole screen.
 """
+import os
 import re
 import shutil
 import subprocess
@@ -47,11 +48,14 @@ def pick_files() -> list[str]:
         from tkinter import filedialog
         root = tk.Tk()
         root.withdraw()
+        root.attributes("-topmost", True)   # show the file window in front
         files = filedialog.askopenfilenames(
+            parent=root,
             title="Select videos to convert for PSP",
             filetypes=[("Video files", "*.mp4 *.mkv *.avi *.mov *.wmv *.flv *.webm *.m4v *.mpg *.mpeg *.ts"),
                        ("All files", "*.*")],
         )
+        root.destroy()
         return list(files)
     except Exception:
         return []
@@ -90,7 +94,7 @@ def detect_crop(ffmpeg: str, src: Path) -> str | None:
     return None
 
 
-def convert(ffmpeg: str, src: Path) -> bool:
+def convert(ffmpeg: str, src: Path) -> Path | None:
     out_dir = src.parent / OUT_DIR_NAME
     out_dir.mkdir(exist_ok=True)
     dst = out_dir / f"{src.stem}_PSP.mp4"
@@ -127,11 +131,51 @@ def convert(ffmpeg: str, src: Path) -> bool:
         str(dst),
     ]
     result = subprocess.run(cmd)
-    if result.returncode == 0:
-        print(f"  Done -> {dst}")
-        return True
-    print(f"  FAILED: {src.name}")
-    return False
+    return dst if result.returncode == 0 else None
+
+
+def run_conversions(ffmpeg: str, files: list[str]) -> None:
+    done, failed = [], []
+    for i, f in enumerate(files, 1):
+        src = Path(f)
+        print(f"\n[{i}/{len(files)}] Converting {src.name}")
+        out = convert(ffmpeg, src) if src.is_file() else None
+        if out:
+            done.append(out)
+        else:
+            failed.append(src.name)
+
+    print("\n" + "=" * 50)
+    if done:
+        print(f"  SUCCESS: {len(done)} video(s) converted!")
+        print()
+        for out in done:
+            print(f"  - {out.name}")
+        print()
+        print("  Saved in:")
+        for folder in dict.fromkeys(out.parent for out in done):
+            print(f"    {folder}")
+        print()
+        print("  Copy them to the VIDEO folder on your PSP's memory card.")
+    if failed:
+        print()
+        print(f"  FAILED: {len(failed)} video(s) could not be converted:")
+        for name in failed:
+            print(f"  - {name}")
+    print("=" * 50)
+
+    while input("\nPress 0 to go back to the menu: ").strip() != "0":
+        print("Please type 0.")
+    os.system("cls" if os.name == "nt" else "clear")
+
+
+def show_menu() -> str:
+    print("\n==============================")
+    print("            PSPify")
+    print("==============================")
+    print("  1. Convert file(s)")
+    print("  2. Exit")
+    return input("\nChoose an option (1-2): ").strip()
 
 
 def main() -> None:
@@ -146,22 +190,22 @@ def main() -> None:
         input("Press Enter to exit...")
         return
 
-    files = args or pick_files()
-    if not files:
-        print("No files selected.")
-        input("Press Enter to exit...")
-        return
+    if args:                       # files were dragged onto the exe
+        run_conversions(ffmpeg, args)
 
-    ok = 0
-    for i, f in enumerate(files, 1):
-        src = Path(f)
-        print(f"\n[{i}/{len(files)}] Converting {src.name}")
-        if src.is_file() and convert(ffmpeg, src):
-            ok += 1
-
-    print(f"\nFinished: {ok}/{len(files)} converted.")
-    print(f"Copy the files from the '{OUT_DIR_NAME}' folder to the VIDEO folder on your PSP's memory card.")
-    input("Press Enter to exit...")
+    while True:
+        choice = show_menu()
+        if choice == "1":
+            files = pick_files()
+            if files:
+                run_conversions(ffmpeg, files)
+            else:
+                print("No files selected.")
+        elif choice == "2":
+            print("Bye!")
+            break
+        else:
+            print("Please type 1 or 2.")
 
 
 if __name__ == "__main__":
